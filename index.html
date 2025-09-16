@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Blubox Guide Viewer</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .step-screenshot {
+      max-width: 100%;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    .loading {
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: .5; }
+    }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+  <div id="app" class="container mx-auto px-4 py-8 max-w-4xl">
+    <!-- Loading State -->
+    <div id="loading" class="text-center py-12">
+      <div class="loading inline-block">
+        <svg class="w-12 h-12 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+        </svg>
+      </div>
+      <p class="mt-4 text-gray-600">Loading guide...</p>
+    </div>
+
+    <!-- Error State -->
+    <div id="error" class="hidden text-center py-12">
+      <svg class="w-12 h-12 text-red-500 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+      </svg>
+      <h2 class="mt-4 text-xl font-semibold text-gray-900">Guide Not Found</h2>
+      <p class="mt-2 text-gray-600">The guide you're looking for doesn't exist or has been removed.</p>
+    </div>
+
+    <!-- Guide Content -->
+    <div id="content" class="hidden">
+      <header class="bg-white rounded-lg shadow-sm p-6 mb-6">
+        <h1 id="guide-title" class="text-3xl font-bold text-gray-900 mb-2"></h1>
+        <p id="guide-description" class="text-gray-600"></p>
+        <div class="mt-4 flex items-center gap-4 text-sm text-gray-500">
+          <span id="guide-domain" class="flex items-center gap-1">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path>
+            </svg>
+            <span></span>
+          </span>
+          <span id="guide-steps" class="flex items-center gap-1">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+            </svg>
+            <span></span>
+          </span>
+        </div>
+      </header>
+
+      <div id="steps-container" class="space-y-6">
+        <!-- Steps will be inserted here -->
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // IMPORTANT: Replace these with your actual Supabase credentials
+    const SUPABASE_URL = 'https://hkdziivtkhceclgeynzb.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhrZHppaXZ0a2hjZWNsZ2V5bnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc5Nzc1MzQsImV4cCI6MjA3MzU1MzUzNH0.3rXO9YIrHgEX-GgulnqtMu9pnL_fi-clJNAERBajPpw';
+
+    // Initialize Supabase client
+    const { createClient } = supabase;
+    const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // Get slug from URL (supports both path and hash routing)
+    function getSlugFromUrl() {
+      // Check hash first (for local development)
+      if (window.location.hash) {
+        const hashMatches = window.location.hash.match(/#\/guide\/([^\/]+)/);
+        if (hashMatches) return hashMatches[1];
+      }
+
+      // Then check regular path (for production)
+      const path = window.location.pathname;
+      const matches = path.match(/\/guide\/([^\/]+)/);
+      return matches ? matches[1] : null;
+    }
+
+    // Load and display guide
+    async function loadGuide() {
+      const slug = getSlugFromUrl();
+
+      if (!slug) {
+        showError();
+        return;
+      }
+
+      try {
+        // Fetch guide from Supabase
+        const { data, error } = await supabaseClient
+          .from('guides')
+          .select('*')
+          .eq('slug', slug)
+          .single();
+
+        if (error || !data) {
+          showError();
+          return;
+        }
+
+        // Increment view count
+        await supabaseClient
+          .from('guides')
+          .update({ view_count: (data.view_count || 0) + 1 })
+          .eq('id', data.id);
+
+        displayGuide(data);
+      } catch (err) {
+        console.error('Error loading guide:', err);
+        showError();
+      }
+    }
+
+    function showError() {
+      document.getElementById('loading').classList.add('hidden');
+      document.getElementById('error').classList.remove('hidden');
+    }
+
+    function displayGuide(guide) {
+      document.getElementById('loading').classList.add('hidden');
+      document.getElementById('content').classList.remove('hidden');
+
+      // Set title
+      document.title = `${guide.title} - Blubox Guide`;
+      document.getElementById('guide-title').textContent = guide.title;
+
+      // Set description
+      if (guide.description) {
+        document.getElementById('guide-description').textContent = guide.description;
+      }
+
+      // Set metadata
+      document.querySelector('#guide-domain span').textContent = guide.domain;
+      document.querySelector('#guide-steps span').textContent = `${guide.steps.length} steps`;
+
+      // Render steps
+      const stepsContainer = document.getElementById('steps-container');
+      guide.steps.forEach((step, index) => {
+        const stepEl = createStepElement(step, index + 1);
+        stepsContainer.appendChild(stepEl);
+      });
+    }
+
+    function createStepElement(step, number) {
+      const div = document.createElement('div');
+      div.className = 'bg-white rounded-lg shadow-sm p-6';
+
+      let screenshotHtml = '';
+      if (step.screenshotDataURL && step.screenshotDataURL !== 'pending') {
+        screenshotHtml = `
+          <div class="mt-4">
+            <img src="${step.screenshotDataURL}" alt="Step ${number} screenshot" class="step-screenshot">
+          </div>
+        `;
+      }
+
+      div.innerHTML = `
+        <div class="flex items-start gap-4">
+          <div class="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-semibold">
+            ${number}
+          </div>
+          <div class="flex-1">
+            <h3 class="text-lg font-semibold text-gray-900 mb-2">${step.humanText || step.action}</h3>
+            ${step.element ? `
+              <div class="text-sm text-gray-600 mb-2">
+                <span class="font-medium">Element:</span> ${step.element.tagName}
+                ${step.element.text ? ` - "${step.element.text}"` : ''}
+              </div>
+            ` : ''}
+            ${step.url ? `
+              <div class="text-xs text-gray-500">
+                <span class="font-medium">URL:</span> ${step.url}
+              </div>
+            ` : ''}
+            ${screenshotHtml}
+          </div>
+        </div>
+      `;
+
+      return div;
+    }
+
+    // Load guide when page loads
+    loadGuide();
+  </script>
+</body>
+</html>

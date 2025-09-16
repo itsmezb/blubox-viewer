@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script>
+    // GitHub Pages 404 redirect for client-side routing
+    // This redirects all guide URLs to index.html with the path as a hash
+    const path = window.location.pathname;
+    if (path.includes('/guide/')) {
+      window.location.replace(window.location.origin + '/#' + path);
+    } else {
+      window.location.replace(window.location.origin);
+    }
+  </script>
+</head>
+<body>
+  Redirecting...
+</body>
+</html>
